@@ -1,3 +1,94 @@
+function addStereo(sdp) {
+    var sdpLines = sdp.split('\r\n');
+
+    // Find opus payload.
+    var opusIndex = findLine(sdpLines, 'a=rtpmap', 'opus/48000/2');
+    var opusPayload;
+    if (opusIndex) {
+        opusPayload = getCodecPayloadType(sdpLines[opusIndex]);
+    }
+
+    // Find the payload in fmtp line.
+    var fmtpLineIndex = findLine(sdpLines, 'a=fmtp:' + opusPayload.toString());
+    if (fmtpLineIndex === null) {
+        return sdp;
+    }
+
+    // Append stereo=1 to fmtp line.
+    // added maxaveragebitrate here; about 128 kbits/s
+    // added stereo=1 here for stereo audio
+    sdpLines[fmtpLineIndex] = sdpLines[fmtpLineIndex].concat('; stereo=1; sprop-stereo=1; maxaveragebitrate=' + (256 * 1024) + '; x-google-min-bitrate=256; x-google-max-bitrate=256; cbr=1;');
+
+    sdp = sdpLines.join('\r\n');
+    //console.error(sdp);
+    return sdp;
+}
+
+// Find the line in sdpLines that starts with |prefix|, and, if specified,
+// contains |substr| (case-insensitive search).
+function findLine(sdpLines, prefix, substr) {
+    return findLineInRange(sdpLines, 0, -1, prefix, substr);
+}
+
+// Find the line in sdpLines[startLine...endLine - 1] that starts with |prefix|
+// and, if specified, contains |substr| (case-insensitive search).
+function findLineInRange(sdpLines, startLine, endLine, prefix, substr) {
+    var realEndLine = endLine !== -1 ? endLine : sdpLines.length;
+    for (var i = startLine; i < realEndLine; ++i) {
+        if (sdpLines[i].indexOf(prefix) === 0) {
+            if (!substr ||
+                sdpLines[i].toLowerCase().indexOf(substr.toLowerCase()) !== -1) {
+                return i;
+            }
+        }
+    }
+    return null;
+}
+
+// Gets the codec payload type from an a=rtpmap:X line.
+function getCodecPayloadType(sdpLine) {
+    var pattern = new RegExp('a=rtpmap:(\\d+) \\w+\\/\\d+');
+    var result = sdpLine.match(pattern);
+    return (result && result.length === 2) ? result[1] : null;
+}
+
+function setMediaBitrate(sdp, media, bitrate) {
+    var lines = sdp.split("\n");
+    var line = -1;
+    for (var i = 0; i < lines.length; i++) {
+        if (lines[i].indexOf("m="+media) === 0) {
+            line = i;
+            break;
+        }
+    }
+    if (line === -1) {
+        console.debug("Could not find the m line for", media);
+        return sdp;
+    }
+    console.debug("Found the m line for", media, "at line", line);
+
+    // Pass the m line
+    line++;
+
+    // Skip i and c lines
+    while(lines[line].indexOf("i=") === 0 || lines[line].indexOf("c=") === 0) {
+        line++;
+    }
+
+    // If we're on a b line, replace it
+    if (lines[line].indexOf("b") === 0) {
+        console.debug("Replaced b line at line", line);
+        lines[line] = "b=AS:"+bitrate;
+        return lines.join("\n");
+    }
+
+    // Add a new b line
+    console.debug("Adding new b line before line", line);
+    var newLines = lines.slice(0, line)
+    newLines.push("b=AS:"+bitrate)
+    newLines = newLines.concat(lines.slice(line, lines.length))
+    return newLines.join("\n")
+}
 /*
 	The MIT License (MIT)
 
@@ -2768,6 +2859,11 @@ function Janus(gatewayCallbacks) {
 						Janus.warn("simulcast=true, but this is not Chrome nor Firefox, ignoring");
 					}
 				}
+			        
+			if (sendVideo) {
+                    offer.sdp = setMediaBitrate(offer.sdp, 'audio', 256);
+                    offer.sdp = addStereo(offer.sdp);
+                } 
 				config.mySdp = offer.sdp;
 				config.pc.setLocalDescription(offer)
 					.catch(callbacks.error);
