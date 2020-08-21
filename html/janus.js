@@ -2401,7 +2401,7 @@ function Janus(gatewayCallbacks) {
 							Janus.log("Default video setting is stdres 4:3");
 							height = 480;
 							maxHeight = 480;
-							width = 640;
+							width = 720;
 						}
 						Janus.log("Adding media constraint:", media.video);
 						videoSupport = {
